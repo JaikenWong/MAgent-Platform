@@ -7,6 +7,7 @@ import com.magent.platform.entity.Approval;
 import com.magent.platform.mapper.ApprovalMapper;
 import com.magent.platform.service.approval.ApprovalEngine;
 import com.magent.platform.service.approval.ApprovalNotifier;
+import com.magent.platform.service.audit.AuditService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
@@ -22,11 +23,14 @@ public class ApprovalController {
     private final ApprovalMapper approvalMapper;
     private final ApprovalEngine engine;
     private final ApprovalNotifier notifier;
+    private final AuditService auditService;
 
-    public ApprovalController(ApprovalMapper approvalMapper, ApprovalEngine engine, ApprovalNotifier notifier) {
+    public ApprovalController(ApprovalMapper approvalMapper, ApprovalEngine engine,
+            ApprovalNotifier notifier, AuditService auditService) {
         this.approvalMapper = approvalMapper;
         this.engine = engine;
         this.notifier = notifier;
+        this.auditService = auditService;
     }
 
     @GetMapping
@@ -59,6 +63,9 @@ public class ApprovalController {
         String actor = body.getOrDefault("actor", "unknown");
         engine.decide(id, "approved".equals(decision), comment, actor, "web");
         Approval a = approvalMapper.selectById(id);
+        auditService.log(actor, "approve".equals(decision) ? "approval_approve" : "approval_reject",
+            "approval", id, Map.of("taskId", a != null ? a.getTaskId() : "", "comment", comment == null ? "" : comment));
+        notifier.pushPendingCount(engine.pendingCount());
         return R.ok(a);
     }
 }

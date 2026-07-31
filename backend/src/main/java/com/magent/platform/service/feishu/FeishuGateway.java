@@ -1,15 +1,16 @@
 package com.magent.platform.service.feishu;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.magent.platform.common.BizException;
+import com.lark.oapi.service.im.v1.model.EventMessage;
+import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
 import com.magent.platform.common.CryptoUtil;
-import com.magent.platform.entity.Agent;
+import com.magent.platform.dto.orchestrator.ExecutionPlan;
 import com.magent.platform.entity.FeishuBot;
 import com.magent.platform.mapper.FeishuBotMapper;
 import com.magent.platform.service.orchestrator.AggregatorService;
 import com.magent.platform.service.orchestrator.ExecutorService;
 import com.magent.platform.service.orchestrator.PlannerService;
-import com.magent.platform.dto.orchestrator.ExecutionPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,9 +18,14 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 飞书网关: 事件路由 + 消息处理入口, 连接飞书 ↔ Orchestrator.
+ * 飞书网关: 长连接消息事件 -> Orchestrator -> 飞书回复.
+ *
+ *  事件由 SDK 长连接接收 (FeishuLongConnectionService 已在 relayExecutor 异步调度),
+ *  此处 handleMessageEvent 同步执行规划/执行/聚合/回复.
+ *  卡片按钮回调走 HTTP webhook -> handleCardCallback.
  */
 @Slf4j
 @Service
@@ -33,92 +39,114 @@ public class FeishuGateway {
     private final AggregatorService aggregator;
     private final ObjectMapper om;
 
-    /**
-     * 处理 URL 验证 (飞书订阅时的 challenge).
-     */
-    public String verifyUrl(String botId, Map<String, Object> body) {
-        String type = (String) body.get("type");
-        if ("url_verification".equals(type)) {
-            return (String) body.get("challenge");
-        }
-        return null;
-    }
+    /** 消息去重: 飞书可能重复推送同一事件. */
+    private final ConcurrentHashMap<String, Boolean> processedMessages = new ConcurrentHashMap<>();
 
-    /**
-     * 处理飞书事件回调.
-     */
-    public void handleEvent(String botId, Map<String, Object> body) {
-        FeishuBot bot = loadBot(botId);
-        if (bot == null) {
-            log.warn("unknown bot: {}", botId);
+    // ───── 长连接消息事件 ─────
+
+    public void handleMessageEvent(FeishuBot bot, P2MessageReceiveV1 event) {
+        EventMessage msg = event.getEvent().getMessage();
+        String messageId = msg.getMessageId();
+
+        if (processedMessages.putIfAbsent(messageId, Boolean.TRUE) != null) {
+            log.debug("[FeishuGW] 消息已处理, 跳过: {}", messageId);
             return;
         }
+        if (processedMessages.size() > 10_000) processedMessages.clear();
 
-        String token = feishuClient.getTenantToken(bot.getAppId(), decryptSecret(bot.getAppSecret()));
+        String chatId = msg.getChatId();
+        String text = extractText(msg.getMessageType(), msg.getContent());
+        if (text == null || text.isBlank()) {
+            log.info("[FeishuGW] 无可处理文本: bot={} type={}", bot.getName(), msg.getMessageType());
+            return;
+        }
+        // 去掉 @机器人 mention 占位
+        text = text.replaceAll("@_user_\\d+", "").trim();
+        if (text.isBlank()) return;
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> event = (Map<String, Object>) body.get("event");
-        if (event == null) return;
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> header = (Map<String, Object>) body.get("header");
-        String eventType = header != null ? (String) header.get("event_type") : null;
-        if (!"im.message.receive_v1".equals(eventType)) return;
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> eventBody = (Map<String, Object>) event.get("event");
-        if (eventBody == null) return;
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> message = (Map<String, Object>) eventBody.get("message");
-        if (message == null) return;
-
-        String msgType = (String) message.get("msg_type");
-        String chatId = (String) message.get("chat_id");
-        String text = extractText(message);
-
-        if (text == null || text.isBlank()) return;
-
-        // Route to orchestrator
-        String contextId = UUID.randomUUID().toString();
-        ExecutionPlan plan = planner.plan(text);
-        log.info("feishu plan: mode={} stages={}", plan.executionMode(), plan.stages().size());
-
-        List<Map<String, String>> results = executorService.execute(plan, contextId);
-        String reply = aggregator.aggregate(results, plan, text);
-
-        // Send reply via Feishu
-        feishuClient.sendText(token, chatId, reply);
+        log.info("[FeishuGW] 收到消息: bot={} chat={} len={}", bot.getName(), chatId, text.length());
+        processMessage(bot, chatId, text);
     }
+
+    private void processMessage(FeishuBot bot, String chatId, String text) {
+        try {
+            String token = feishuClient.getTenantToken(bot.getAppId(), decrypt(bot.getAppSecret()));
+            String contextId = UUID.randomUUID().toString();
+
+            ExecutionPlan plan = planner.plan(text);
+            log.info("[FeishuGW] 规划: mode={} stages={}", plan.executionMode(), plan.stages().size());
+
+            List<Map<String, String>> results = executorService.execute(plan, contextId);
+            String reply = aggregator.aggregate(results, plan, text);
+
+            feishuClient.sendText(token, chatId, reply);
+        } catch (Exception e) {
+            log.error("[FeishuGW] 处理消息失败 bot={}", bot.getName(), e);
+            try {
+                String token = feishuClient.getTenantToken(bot.getAppId(), decrypt(bot.getAppSecret()));
+                feishuClient.sendText(token, chatId, "处理失败: " + e.getMessage());
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    // ───── 审批卡片按钮回调 (HTTP webhook) ─────
 
     public void handleCardCallback(String botId, Map<String, Object> body) {
-        // Phase 4: approval card button callbacks
-        log.info("card callback received for bot {}: {}", botId, body);
+        // Phase 4: 审批卡片按钮 -> 更新 Approval
+        log.info("[FeishuGW] 卡片回调: botId={}", botId);
     }
 
-    private FeishuBot loadBot(String botId) {
-        return botMapper.selectOne(
-            new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<FeishuBot>()
-                .eq("id", botId)
-                .eq("status", "active"));
+    // ───── helpers ─────
+
+    /**
+     * 从飞书 content JSON 字符串提取文本.
+     *  text: {"text":"实际内容"}
+     *  post: {"title":...,"content":[[{tag:"text","text":"..."}]]}
+     */
+    private String extractText(String msgType, String content) {
+        if (content == null || content.isBlank()) return null;
+        try {
+            JsonNode node = om.readTree(content);
+            if ("text".equals(msgType)) {
+                String t = node.path("text").asText("");
+                return t.isBlank() ? null : t;
+            }
+            if ("post".equals(msgType)) {
+                return extractPostText(node);
+            }
+            log.debug("[FeishuGW] 不支持的消息类型: {}", msgType);
+            return null;
+        } catch (Exception e) {
+            log.warn("[FeishuGW] 解析消息内容失败: type={} content={}", msgType, content, e);
+            return null;
+        }
     }
 
-    private String extractText(Map<String, Object> message) {
-        String msgType = (String) message.get("msg_type");
-        if ("text".equals(msgType)) {
-            return (String) message.get("text");
+    private String extractPostText(JsonNode content) {
+        StringBuilder sb = new StringBuilder();
+        JsonNode title = content.path("title");
+        if (title.isTextual() && !title.asText().isBlank()) {
+            sb.append(title.asText()).append("\n");
         }
-        @SuppressWarnings("unchecked")
-        Map<String, Object> content = (Map<String, Object>) message.get("content");
-        if (content != null) {
-            return (String) content.get("text");
+        JsonNode body = content.path("content");
+        if (body.isArray()) {
+            for (JsonNode para : body) {
+                if (!para.isArray()) continue;
+                for (JsonNode el : para) {
+                    if ("text".equals(el.path("tag").asText())) {
+                        sb.append(el.path("text").asText(""));
+                    }
+                }
+                sb.append("\n");
+            }
         }
-        return null;
+        String result = sb.toString().trim();
+        return result.isBlank() ? null : result;
     }
 
-    private String decryptSecret(String secret) {
-        try { return CryptoUtil.decrypt(secret); } catch (Exception e) {
-            return secret; // fallback plaintext
-        }
+    private String decrypt(String cipher) {
+        if (cipher == null || cipher.isBlank()) return "";
+        try { return CryptoUtil.decrypt(cipher); } catch (Exception e) { return cipher; }
     }
 }

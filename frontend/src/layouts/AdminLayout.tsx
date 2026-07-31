@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link, Outlet, useLocation } from 'react-router-dom'
-import { Layout, Menu, Avatar, Typography } from 'antd'
+import { Layout, Menu, Avatar, Typography, Badge } from 'antd'
 import {
   DashboardOutlined, RobotOutlined, MessageOutlined,
   ApartmentOutlined, SafetyCertificateOutlined,
   MessageOutlined as ChatOutlined, ThunderboltOutlined, SettingOutlined, FileTextOutlined,
   BellOutlined, LogoutOutlined,
 } from '@ant-design/icons'
+import { Client } from '@stomp/stompjs'
 import { useAuthStore } from '@/stores/auth'
+import { approvalApi } from '@/api/approvals'
 import { tokens } from '@/theme/tokens'
 
 const { Sider, Header, Content } = Layout
@@ -31,10 +33,40 @@ export default function AdminLayout() {
   const selected = NAV.find(n => loc.pathname.startsWith(n.key) && n.key !== '/')?.key
     || (loc.pathname === '/' ? '/' : '')
   const [collapsed, setCollapsed] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
   const { username, logout } = useAuthStore()
+  const stompRef = useRef<Client | null>(null)
 
+  // Initial fetch + WebSocket subscription for real-time updates
   useEffect(() => {
-    // Phase 4: 这里接 WebSocket 订阅待审批数, 目前占位
+    // Initial count
+    approvalApi.pendingCount().then(c => setPendingCount(c)).catch(() => {})
+
+    // WebSocket: subscribe to /topic/approvals
+    const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+    const client = new Client({
+      brokerURL: wsUrl,
+      reconnectDelay: 5000,
+      onConnect: () => {
+        client.subscribe('/topic/approvals', (msg) => {
+          try {
+            const data = JSON.parse(msg.body)
+            if (data.pendingCount !== undefined) {
+              setPendingCount(data.pendingCount)
+            }
+          } catch {
+            // refresh count on any message
+            approvalApi.pendingCount().then(c => setPendingCount(c)).catch(() => {})
+          }
+        })
+      },
+    })
+    stompRef.current = client
+    client.activate()
+
+    return () => {
+      client.deactivate()
+    }
   }, [])
 
   return (
@@ -57,7 +89,13 @@ export default function AdminLayout() {
         <Menu
           theme="dark" mode="inline"
           selectedKeys={[selected || '/']}
-          items={NAV.map(n => ({ key: n.key, label: <Link to={n.key}>{n.label}</Link>, icon: n.icon }))}
+          items={NAV.map(n => ({
+            key: n.key,
+            label: <Link to={n.key}>{n.label}</Link>,
+            icon: n.key === '/approvals' && pendingCount > 0
+              ? <Badge count={pendingCount} size="small" offset={[6, -2]}>{n.icon}</Badge>
+              : n.icon,
+          }))}
         />
       </Sider>
       <Layout>
@@ -67,6 +105,13 @@ export default function AdminLayout() {
           borderBottom: `1px solid ${tokens.color.border}`,
           paddingInline: 24, gap: 16,
         }}>
+          {pendingCount > 0 && (
+            <Link to="/approvals">
+              <Badge count={pendingCount} offset={[-2, 4]}>
+                <BellOutlined style={{ fontSize: 18, color: tokens.color.anchor, cursor: 'pointer' }} />
+              </Badge>
+            </Link>
+          )}
           <Avatar size="small" style={{ background: tokens.color.anchor }}>
             {(username || 'U').slice(0, 1).toUpperCase()}
           </Avatar>

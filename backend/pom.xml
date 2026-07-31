@@ -104,6 +104,13 @@
             <version>${bouncycastle.version}</version>
         </dependency>
 
+        <!-- Feishu SDK (长连接 + OpenAPI) -->
+        <dependency>
+            <groupId>com.larksuite.oapi</groupId>
+            <artifactId>oapi-sdk</artifactId>
+            <version>2.5.3</version>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -182,6 +189,11 @@
             <snapshots>
                 <enabled>false</enabled>
             </snapshots>
+        </repository>
+        <repository>
+            <id>maven-central-direct</id>
+            <name>Maven Central (direct, bypass aliyun mirror)</name>
+            <url>https://repo1.maven.org/maven2</url>
         </repository>
     </repositories>
 </project>

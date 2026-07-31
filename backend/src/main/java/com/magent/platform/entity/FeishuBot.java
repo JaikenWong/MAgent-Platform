@@ -22,4 +22,6 @@ public class FeishuBot extends BaseEntity {
     private String boundAgentId;
     /** active | inactive */
     private String status;
+    /** 是否启用飞书长连接 (WebSocket) 接收事件; false 则走 webhook */
+    private Boolean longConnectionEnabled;
 }

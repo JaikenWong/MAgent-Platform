@@ -11,7 +11,6 @@ import com.magent.platform.dto.a2a.SendMessageParams;
 import com.magent.platform.dto.a2a.TaskIdParams;
 import com.magent.platform.dto.a2a.TaskListParams;
 import com.magent.platform.entity.Agent;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -26,14 +25,22 @@ import java.util.List;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class A2AClientService {
 
     private final ObjectMapper om;
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
+    private final String publicBaseUrl;
 
-    @Value("${magent.public-base-url:http://localhost:8080}")
-    private String publicBaseUrl;
+    public A2AClientService(ObjectMapper om,
+                            @Value("${magent.public-base-url:http://localhost:8080}") String publicBaseUrl) {
+        this(om, RestClient.create(), publicBaseUrl);
+    }
+
+    A2AClientService(ObjectMapper om, RestClient restClient, String publicBaseUrl) {
+        this.om = om;
+        this.restClient = restClient;
+        this.publicBaseUrl = publicBaseUrl;
+    }
 
     public A2ATask sendMessage(Agent agent, Message message, boolean blocking) {
         SendMessageParams params = new SendMessageParams(message, null);

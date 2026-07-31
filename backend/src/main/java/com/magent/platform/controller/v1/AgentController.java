@@ -7,12 +7,15 @@ import com.magent.platform.dto.a2a.AgentCard;
 import com.magent.platform.entity.Agent;
 import com.magent.platform.mapper.AgentMapper;
 import com.magent.platform.service.a2a.AgentCardService;
+import com.magent.platform.service.audit.AuditService;
 import com.magent.platform.service.dify.DifyBlockingResult;
 import com.magent.platform.service.dify.DifyClient;
 import com.magent.platform.service.dify.DifyRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -24,6 +27,7 @@ public class AgentController extends CrudController<Agent, AgentMapper> {
 
     private final AgentCardService cardService;
     private final DifyClient difyClient;
+    private final AuditService auditService;
 
     @Value("${magent.public-base-url:http://localhost:8080}")
     private String publicBaseUrl;
@@ -81,6 +85,8 @@ public class AgentController extends CrudController<Agent, AgentMapper> {
     public R<Agent> create(@Valid @RequestBody Agent entity) {
         encryptApiKeyIfNecessary(entity);
         mapper.insert(entity);
+        auditService.log(currentActor(), "create_agent", "agent", entity.getId(),
+            Map.of("name", entity.getName() == null ? "" : entity.getName()));
         return R.ok(entity);
     }
 
@@ -95,7 +101,24 @@ public class AgentController extends CrudController<Agent, AgentMapper> {
             encryptApiKeyIfNecessary(entity);
         }
         mapper.updateById(entity);
+        auditService.log(currentActor(), "update_agent", "agent", id,
+            Map.of("name", entity.getName() == null ? "" : entity.getName()));
         return R.ok(entity);
+    }
+
+    @Override
+    @DeleteMapping("/{id}")
+    public R<Void> delete(@PathVariable String id) {
+        Agent db = mapper.selectById(id);
+        mapper.deleteById(id);
+        auditService.log(currentActor(), "delete_agent", "agent", id,
+            Map.of("name", db != null ? db.getName() : ""));
+        return R.ok();
+    }
+
+    private String currentActor() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null ? auth.getName() : "system";
     }
 
     private void encryptApiKeyIfNecessary(Agent a) {
