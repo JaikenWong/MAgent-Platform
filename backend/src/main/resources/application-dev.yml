@@ -1,0 +1,12 @@
+server:
+  port: 8080
+
+spring:
+  jpa:
+    show-sql: false
+
+# 仅本地开发关掉 CSRF/CORS 严格模式, 见 SecurityConfig
+
+logging:
+  level:
+    com.magent.platform: DEBUG

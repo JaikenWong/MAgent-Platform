@@ -1,0 +1,44 @@
+# env
+.env
+.env.*
+!.env.example
+
+# shadcn / vite
+node_modules
+dist
+dist-ssr
+*.local
+.vite
+
+# java / maven
+target
+*.class
+.mvn/wrapper/maven-wrapper.jar
+HELP.md
+.mvn
+build/
+
+# editor
+.idea
+.vscode
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# os
+.DS_Store
+Thumbs.db
+
+# logs
+logs
+*.log
+
+# docker volumes
+.data
+
+# tsbuildinfo
+*.tsbuildinfo
+**/.codewhale/*
+!**/.codewhale/constitution.json
+.deepseek/
