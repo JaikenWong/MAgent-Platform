@@ -7,7 +7,8 @@ import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
 import com.magent.platform.common.CryptoUtil;
 import com.magent.platform.dto.orchestrator.ExecutionPlan;
 import com.magent.platform.entity.FeishuBot;
-import com.magent.platform.mapper.FeishuBotMapper;
+import com.magent.platform.service.approval.ApprovalEngine;
+import com.magent.platform.service.approval.ApprovalNotifier;
 import com.magent.platform.service.orchestrator.AggregatorService;
 import com.magent.platform.service.orchestrator.ExecutorService;
 import com.magent.platform.service.orchestrator.PlannerService;
@@ -32,11 +33,12 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class FeishuGateway {
 
-    private final FeishuBotMapper botMapper;
     private final FeishuClient feishuClient;
     private final PlannerService planner;
     private final ExecutorService executorService;
     private final AggregatorService aggregator;
+    private final ApprovalEngine approvalEngine;
+    private final ApprovalNotifier approvalNotifier;
     private final ObjectMapper om;
 
     /** 消息去重: 飞书可能重复推送同一事件. */
@@ -93,8 +95,32 @@ public class FeishuGateway {
     // ───── 审批卡片按钮回调 (HTTP webhook) ─────
 
     public void handleCardCallback(String botId, Map<String, Object> body) {
-        // Phase 4: 审批卡片按钮 -> 更新 Approval
-        log.info("[FeishuGW] 卡片回调: botId={}", botId);
+        // 飞书互动卡片按钮回调: body.action.value = {approvalId, action}
+        @SuppressWarnings("unchecked")
+        Map<String, Object> action = (Map<String, Object>) body.get("action");
+        if (action == null) {
+            log.info("[FeishuGW] 卡片回调无 action: botId={}", botId);
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> value = (Map<String, Object>) action.get("value");
+        if (value == null) return;
+
+        String approvalId = (String) value.get("approvalId");
+        String actionType = (String) value.get("action");
+        if (approvalId == null || actionType == null) {
+            log.warn("[FeishuGW] 卡片回调缺 approvalId/action: value={}", value);
+            return;
+        }
+        String openId = (String) body.get("open_id");
+        boolean approved = "approve".equals(actionType);
+        log.info("[FeishuGW] 审批决策: approval={} action={} by={}", approvalId, actionType, openId);
+        try {
+            approvalEngine.decide(approvalId, approved, null, openId, "feishu");
+            approvalNotifier.pushPendingCount(approvalEngine.pendingCount());
+        } catch (Exception e) {
+            log.error("[FeishuGW] 审批决策失败: approval={}", approvalId, e);
+        }
     }
 
     // ───── helpers ─────

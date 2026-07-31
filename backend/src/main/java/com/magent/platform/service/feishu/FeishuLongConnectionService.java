@@ -1,8 +1,6 @@
 package com.magent.platform.service.feishu;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lark.oapi.core.utils.Jsons;
 import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.service.im.ImService;
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
@@ -10,7 +8,6 @@ import com.lark.oapi.ws.Client;
 import com.magent.platform.common.CryptoUtil;
 import com.magent.platform.entity.FeishuBot;
 import com.magent.platform.mapper.FeishuBotMapper;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +39,6 @@ public class FeishuLongConnectionService {
 
     private final FeishuBotMapper botMapper;
     private final FeishuGateway gateway;
-    private final ObjectMapper om;
 
     private final Map<String, Client> clientMap = new ConcurrentHashMap<>();
     private final ExecutorService relayExecutor = Executors.newFixedThreadPool(8, r -> {

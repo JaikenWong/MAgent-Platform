@@ -23,7 +23,7 @@ public class DashboardController {
         m.put("agentCount",      count("SELECT count(*) FROM agents WHERE status='active'"));
         m.put("taskCountToday",  count("SELECT count(*) FROM a2a_tasks WHERE created_at >= CURRENT_DATE"));
         m.put("pendingApprovals", count("SELECT count(*) FROM approvals WHERE status='pending'"));
-        m.put("feishuMessageCount", 0L);
+        m.put("feishuMessageCount", count("SELECT count(*) FROM conversations WHERE source='feishu'"));
         m.put("taskDistribution", Map.of(
             "completed", count("SELECT count(*) FROM a2a_tasks WHERE status='completed'"),
             "working", count("SELECT count(*) FROM a2a_tasks WHERE status='working'"),

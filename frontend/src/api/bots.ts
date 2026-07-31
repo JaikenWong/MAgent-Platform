@@ -10,6 +10,7 @@ export interface FeishuBot {
   webhookUrl?: string
   boundAgentId?: string
   status?: string
+  longConnectionEnabled?: boolean
 }
 
 export const botApi = {
@@ -19,5 +20,7 @@ export const botApi = {
   create: (b: FeishuBot) => api.post<unknown, FeishuBot>('/bots', b),
   update: (id: string, b: FeishuBot) => api.put<unknown, FeishuBot>(`/bots/${id}`, b),
   remove: (id: string) => api.delete<unknown, void>(`/bots/${id}`),
+  enableLongConnection: (id: string) => api.post<unknown, void>(`/bots/${id}/long-connection/enable`),
+  disableLongConnection: (id: string) => api.post<unknown, void>(`/bots/${id}/long-connection/disable`),
   test: (id: string) => api.post<unknown, { ok: boolean; message: string }>(`/bots/${id}/test`),
 }

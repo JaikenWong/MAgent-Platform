@@ -32,6 +32,7 @@ public class ApprovalEngine {
     private final ApprovalPolicyMapper policyMapper;
     private final ApprovalMapper approvalMapper;
     private final TaskManagerService taskManagerService;
+    private final ApprovalNotifier notifier;
     private final ObjectMapper om;
 
     /**
@@ -70,6 +71,8 @@ public class ApprovalEngine {
             new Message("system", java.util.List.of(new TextPart("审批中: " + skillName + " — 等待管理员审批")),
                 null, null, null, null));
         log.info("approval created: id={} task={} policy={}", approval.getId(), taskId, policy.getName());
+        notifier.notifyApproval(approval, policy);
+        notifier.pushPendingCount(pendingCount());
         return true;
     }
 

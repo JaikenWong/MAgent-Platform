@@ -34,13 +34,14 @@ class ApprovalEngineTest {
     @Mock private ApprovalPolicyMapper policyMapper;
     @Mock private ApprovalMapper approvalMapper;
     @Mock private TaskManagerService taskManagerService;
+    @Mock private ApprovalNotifier notifier;
 
     private ApprovalEngine engine;
     private final ObjectMapper om = new ObjectMapper();
 
     @BeforeEach
     void setup() {
-        engine = new ApprovalEngine(policyMapper, approvalMapper, taskManagerService, om);
+        engine = new ApprovalEngine(policyMapper, approvalMapper, taskManagerService, notifier, om);
     }
 
     @Test

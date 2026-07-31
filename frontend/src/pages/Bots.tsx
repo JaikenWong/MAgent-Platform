@@ -55,6 +55,13 @@ export default function Bots() {
     onError: (e: Error) => message.error(e.message),
   })
 
+  const lcMut = useMutation({
+    mutationFn: ({ id, enable }: { id: string; enable: boolean }) =>
+      enable ? botApi.enableLongConnection(id) : botApi.disableLongConnection(id),
+    onSuccess: () => { message.success('长连接状态已更新'); qc.invalidateQueries({ queryKey: ['bots'] }) },
+    onError: (e: Error) => message.error(e.message),
+  })
+
   function openNew() {
     setEditing({ name: '', status: 'active' })
     form.resetFields()
@@ -124,6 +131,22 @@ export default function Bots() {
         const name = getBoundAgentName(id)
         return <Text type={id ? undefined : 'secondary'}>{name}</Text>
       },
+    },
+    {
+      title: '长连接',
+      dataIndex: 'longConnectionEnabled',
+      key: 'longConnectionEnabled',
+      width: 90,
+      render: (enabled: boolean, record: FeishuBot) => (
+        <Tooltip title="WebSocket 接收飞书事件">
+          <Switch
+            size="small"
+            checked={enabled}
+            loading={lcMut.isPending && lcMut.variables?.id === record.id}
+            onChange={(checked) => lcMut.mutate({ id: record.id!, enable: checked })}
+          />
+        </Tooltip>
+      ),
     },
     {
       title: '状态',
@@ -251,6 +274,9 @@ export default function Bots() {
                 value: a.id,
               }))}
             />
+          </Form.Item>
+          <Form.Item label="长连接 (WebSocket 接收事件)" name="longConnectionEnabled" valuePropName="checked">
+            <Switch checkedChildren="启用" unCheckedChildren="关闭" />
           </Form.Item>
           <Form.Item label="状态" name="status" valuePropName="checked"
             initialValue="active"
