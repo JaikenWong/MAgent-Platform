@@ -3,6 +3,7 @@ package com.magent.platform.controller.webhook;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.magent.platform.common.CryptoUtil;
+import com.magent.platform.common.BizException;
 import com.magent.platform.common.R;
 import com.magent.platform.entity.FeishuBot;
 import com.magent.platform.mapper.FeishuBotMapper;
@@ -54,13 +55,13 @@ public class FeishuWebhookController {
                 json = cryptoUtil.decrypt(encryptKey, (String) enc.get("encrypt"));
             }
 
-            // 签名校验 (有签名头则校验, 失败仅告警不拒绝, MVP)
+            // 签名校验 (有签名头即强校验, 失败拒绝)
             if (signature != null && !signature.isBlank()) {
                 FeishuBot bot = findBot(botId);
                 if (bot != null) {
                     String encryptKey = decryptEncryptKey(bot.getEncryptKey());
                     boolean ok = cryptoUtil.verifySignature(encryptKey, timestamp, nonce, rawBody, signature);
-                    if (!ok) log.warn("卡片回调签名校验失败: botId={}", botId);
+                    if (!ok) throw new BizException(403, "飞书签名校验失败");
                 }
             }
 

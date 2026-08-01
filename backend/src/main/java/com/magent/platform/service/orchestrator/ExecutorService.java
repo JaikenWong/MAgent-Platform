@@ -268,10 +268,9 @@ public class ExecutorService {
     }
 
     private String createApprovalTask(String contextId, Agent agent, String input) {
-        String taskId = UUID.randomUUID().toString();
         Message userMsg = new Message("user", List.of(new TextPart(input)), contextId, null, null, null);
-        taskManagerService.create(contextId, agent.getId(), userMsg);
-        return taskId;
+        A2ATask task = taskManagerService.create(contextId, agent.getId(), userMsg);
+        return task.id();
     }
 
     // ───── condition evaluation ─────

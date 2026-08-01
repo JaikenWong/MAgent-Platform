@@ -45,7 +45,7 @@ public class FeishuClient {
         post(token, "/im/v1/messages", Map.of(
             "receive_id", chatId,
             "msg_type", "text",
-            "content", Map.of("text", text)
+            "content", safeJson(Map.of("text", text))
         ));
     }
 
@@ -55,6 +55,10 @@ public class FeishuClient {
             "msg_type", "interactive",
             "content", elements
         ));
+    }
+
+    private String safeJson(Object obj) {
+        try { return om.writeValueAsString(obj); } catch (Exception e) { return "{}"; }
     }
 
     public void sendCard(String token, String chatId, Map<String, Object> card) {
@@ -76,8 +80,9 @@ public class FeishuClient {
                 .retrieve()
                 .body(String.class);
             Map<String, Object> m = om.readValue(json, Map.class);
-            if ((int) m.get("code") != 0) {
-                log.warn("feishu api error: {}", m);
+            Object code = m.get("code");
+            if (code instanceof Number n && n.intValue() != 0) {
+                throw new BizException(500, "飞书 API 错误: " + m.get("msg"));
             }
             return m;
         } catch (Exception e) {

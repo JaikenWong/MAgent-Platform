@@ -137,7 +137,7 @@ public class ApprovalEngine {
             new QueryWrapper<ApprovalPolicy>()
                 .eq("enabled", true)
                 .and(w -> w.isNull("applies_to")
-                    .or().like("applies_to", skillName)));
+                    .or().apply("applies_to::text LIKE CONCAT('%', {0}, '%')", skillName)));
     }
 
     private String serializePayload(Map<String, Object> payload) {
