@@ -39,6 +39,9 @@ logs
 
 # tsbuildinfo
 *.tsbuildinfo
+
+# claude / agent tooling
+.claude/
 **/.codewhale/*
 !**/.codewhale/constitution.json
 .deepseek/
