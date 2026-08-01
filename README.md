@@ -71,12 +71,13 @@ MAgent-Platform/
 
 ## Roadmap
 
-- [x] Phase 0 — 全栈脚手架
-- [x] Phase 1 — Agent Wrapper (Dify → A2A Server)
-- [x] Phase 2 — Orchestrator
-- [x] Phase 3 — 飞书接入
-- [x] Phase 4 — 审批 (HITL)
-- [x] Phase 5 — 完善
+- [x] Phase 0 - 全栈脚手架
+- [x] Phase 1 - Agent Wrapper (Dify -> A2A Server)
+- [x] Phase 2 - Orchestrator (规则 + LLM 编排, 四模式执行)
+- [x] Phase 3 - 飞书接入 (oapi-sdk 长连接, 非 webhook)
+- [x] Phase 4 - 审批 HITL (飞书卡片按钮闭环 + 超时)
+- [x] Phase 5 - 完善 (Dashboard/对话/审计/设置/测试)
+- [ ] 端到端验证 (真飞书 + Dify 环境)
 
 ---
 

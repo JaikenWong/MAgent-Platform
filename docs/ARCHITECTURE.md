@@ -571,32 +571,34 @@ MAgent-Platform/
 - [x] 管理端 Agent CRUD + AES 加密存储 + 测试连通 + Card 预览抽屉
 - [x] 前端 Agents 页: 网格画廊 + Dify 表单 + 测试连通 + Card 预览
 
-### Phase 2 — Orchestrator
-- [ ] `planner`: LLM 意图解析 → 匹配 `orchestration_rules` → 生成执行计划 (DAG)
-- [ ] `executor`: 顺/并/条件执行, 通过 A2A Client 调各 Agent
-- [ ] `aggregator`: 结果聚合 → 飞书回复
-- [ ] 管理端规则 CRUD + DAG 可视化 (MVP 表单)
+### Phase 2 - Orchestrator
+- [x] `planner`: LLM 意图解析 (Spring AI ChatClient) + 规则匹配 -> ExecutionPlan
+- [x] `executor`: 顺/并/条件/路由 四模式, 通过 A2A Client 调各 Agent
+- [x] `aggregator`: 结果聚合 (单 Agent 直返 / 多 Agent LLM 合成)
+- [x] 管理端规则 CRUD (CrudController); DAG 可视化未做 (MVP 表单)
 
-### Phase 3 — 飞书接入
-- [ ] `feishu/gateway`: 事件订阅, 多 Bot 路由
-- [ ] `feishu/client`: 消息发送 (含 SSE 流式更新卡片)
-- [ ] `feishu/cards`: 结果卡片 + 审批互动卡片
-- [ ] 端到端: 飞书消息 → 编排 → 多 Agent → 飞书回复
+### Phase 3 - 飞书接入
+- [x] `feishu/long_connection`: oapi-sdk ws.Client 长连接接收事件 (替代 webhook), 多 Bot
+- [x] `feishu/gateway`: 事件 -> Orchestrator -> 回复; 对话/消息持久化
+- [x] `feishu/client`: 消息发送 + 审批互动卡片 (带按钮)
+- [x] `feishu/crypto`: 加密回调解密 + 签名校验
+- [ ] 端到端: 飞书消息 -> 编排 -> 多 Agent -> 飞书回复 (未真环境验证)
 
-### Phase 4 — 审批 (HITL)
-- [ ] `approval/engine`: 策略匹配, 创建 `approvals` 记录, Task 转 `input_required`
-- [ ] `approval/notifier`: 飞书卡片推送 + 前端 WebSocket 推送
-- [ ] `approval/timeout`: Celery beat 定时
-- [ ] 前端审批队列 + 顶栏角标 + 飞书卡片按钮回调
-- [ ] 端到端: 敏感操作 → 挂起 → 双渠道审批 → 恢复
+### Phase 4 - 审批 (HITL)
+- [x] `approval/engine`: 策略匹配 (auto/notify/require_one/quorum/require_role), 创建 `approvals`, Task 转 `input_required`
+- [x] `approval/notifier`: 飞书互动卡片 (带批准/拒绝按钮) + 前端 WebSocket 推送
+- [x] `approval/timeout`: `@Scheduled` 定时 (auto_reject/escalate)
+- [x] 前端审批队列 + 顶栏角标 (STOMP) + 飞书卡片按钮回调闭环
+- [ ] 端到端: 敏感操作 -> 挂起 -> 双渠道审批 -> 恢复 (未真环境验证)
 
-### Phase 5 — 完善
-- [ ] Dashboard 统计 + 图表
-- [ ] 对话/Task 详情可视化 (调用链路图)
-- [ ] 审计日志查询
-- [ ] 系统设置页
-- [ ] 测试 (pytest + Vitest)
-- [ ] 文档 + 部署脚本
+### Phase 5 - 完善
+- [x] Dashboard 统计 (JdbcTemplate SQL) + 分布图
+- [x] 对话/Task 列表 + 详情 (调用链路图未做)
+- [x] 审计日志查询 (AuditService 记录)
+- [x] 系统设置页
+- [x] 测试 (JUnit 25 + Vitest 3)
+- [x] 文档 (CLAUDE.md/AGENTS.md/ARCHITECTURE.md/README)
+- [ ] 端到端 Docker 部署验证
 
 ---
 
@@ -604,8 +606,8 @@ MAgent-Platform/
 
 | 决策 | 选择 | 备选 | 理由 |
 |---|---|---|---|
-| A2A SDK | a2a-sdk (Python) | a2a-go / a2a-js | Backend 用 Python, Dify 也 Python 生态, 统一 |
-| 编排器 | 自研 Python | LangGraph | 避免引入 LangChain 依赖链; A2A Task 本就是编排抽象, HITL 原生支持 |
+| A2A 协议 | 手写 JSON-RPC (Java) | a2a-java-sdk / a2a-sdk (Python) | 协议简单, 不引 SDK 自控; 原 Python 计划已废弃 |
+| 编排器 | 自研 Java (Spring AI) | LangGraph | 避免依赖链; A2A Task 即编排抽象, HITL 原生支持 |
 | HITL 状态机 | A2A `input_required` | 自造审批表 | 协议原生, Agent 不用感知审批存在 |
 | 审批触发 | Agent Card `approval_skills` | 规则匹配 | Agent 自声明更灵活, 规则可覆盖 |
 | 前端图表 | @ant-design/charts | ECharts | 与 AntD 设计一致 |
@@ -620,7 +622,7 @@ MAgent-Platform/
 
 | 风险 | 缓解 |
 |---|---|
-| A2A SDK Python 不成熟 | 官方维护, v1.0 已发布; 关键路径手写 JSON-RPC 兜底 |
+| A2A 协议变更 | 手写 JSON-RPC 集中在 A2AServerService/A2AHostController, 协议简单可控 |
 | Dify API 变化 | `dify_client` 集中封装, 版本锁 |
 | 飞书卡片回调延迟 | 审批链路异步化, WebSocket 推前端兜底 |
 | 长任务飞书超时 | SSE 流式更新卡片 + A2A Push Notification |

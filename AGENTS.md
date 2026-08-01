@@ -12,9 +12,11 @@ Admin UI for agents/bots/rules/approvals/audit lives in `frontend`.
 - Deployment: Docker Compose (+ optional Traefik profile); Makefile at repo root
 - Detailed design: `docs/ARCHITECTURE.md` (Chinese) — read before touching domain code
 
-Current state: Phase 0 scaffolding only. A2A/orchestrator/Feishu service classes exist
-(`backend/.../service/{a2a,dify,orchestrator,llm}`) but most are not yet wired to
-controllers; roadmap in README.
+Current state: Phase 1-4 implemented and wired. Dify->A2A wrapper (JSON-RPC hand-written, no SDK),
+orchestrator (rule + Spring AI planner, 4-mode executor), Feishu long-connection intake (oapi-sdk
+ws.Client), and HITL approval closed loop (feishu card -> decide -> task resume; @Scheduled timeout).
+Frontend: all 11 pages + vitest. See CLAUDE.md "Service wiring status". End-to-end against live
+Feishu+Dify not yet validated.
 
 ## Commands
 
