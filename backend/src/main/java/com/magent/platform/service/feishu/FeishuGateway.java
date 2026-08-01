@@ -1,12 +1,17 @@
 package com.magent.platform.service.feishu;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lark.oapi.service.im.v1.model.EventMessage;
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
 import com.magent.platform.common.CryptoUtil;
 import com.magent.platform.dto.orchestrator.ExecutionPlan;
+import com.magent.platform.entity.Conversation;
 import com.magent.platform.entity.FeishuBot;
+import com.magent.platform.entity.Message;
+import com.magent.platform.mapper.ConversationMapper;
+import com.magent.platform.mapper.MessageMapper;
 import com.magent.platform.service.approval.ApprovalEngine;
 import com.magent.platform.service.approval.ApprovalNotifier;
 import com.magent.platform.service.orchestrator.AggregatorService;
@@ -16,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 飞书网关: 长连接消息事件 -> Orchestrator -> 飞书回复.
  *
  *  事件由 SDK 长连接接收 (FeishuLongConnectionService 已在 relayExecutor 异步调度),
- *  此处 handleMessageEvent 同步执行规划/执行/聚合/回复.
+ *  此处 handleMessageEvent 同步执行: 持久化对话/消息 -> 规划/执行/聚合 -> 回复.
  *  卡片按钮回调走 HTTP webhook -> handleCardCallback.
  */
 @Slf4j
@@ -39,6 +45,8 @@ public class FeishuGateway {
     private final AggregatorService aggregator;
     private final ApprovalEngine approvalEngine;
     private final ApprovalNotifier approvalNotifier;
+    private final ConversationMapper conversationMapper;
+    private final MessageMapper messageMapper;
     private final ObjectMapper om;
 
     /** 消息去重: 飞书可能重复推送同一事件. */
@@ -71,9 +79,13 @@ public class FeishuGateway {
     }
 
     private void processMessage(FeishuBot bot, String chatId, String text) {
+        Conversation conv = findOrCreateConversation(bot, chatId);
+        saveMessage(conv.getId(), "user", text, null);
         try {
             String token = feishuClient.getTenantToken(bot.getAppId(), decrypt(bot.getAppSecret()));
             String contextId = UUID.randomUUID().toString();
+            conv.setA2aContextId(contextId);
+            conversationMapper.updateById(conv);
 
             ExecutionPlan plan = planner.plan(text);
             log.info("[FeishuGW] 规划: mode={} stages={}", plan.executionMode(), plan.stages().size());
@@ -81,9 +93,11 @@ public class FeishuGateway {
             List<Map<String, String>> results = executorService.execute(plan, contextId);
             String reply = aggregator.aggregate(results, plan, text);
 
+            saveMessage(conv.getId(), "agent", reply, null);
             feishuClient.sendText(token, chatId, reply);
         } catch (Exception e) {
             log.error("[FeishuGW] 处理消息失败 bot={}", bot.getName(), e);
+            saveMessage(conv.getId(), "system", "处理失败: " + e.getMessage(), null);
             try {
                 String token = feishuClient.getTenantToken(bot.getAppId(), decrypt(bot.getAppSecret()));
                 feishuClient.sendText(token, chatId, "处理失败: " + e.getMessage());
@@ -123,7 +137,36 @@ public class FeishuGateway {
         }
     }
 
-    // ───── helpers ─────
+    // ───── helpers: 对话/消息持久化 ─────
+
+    private Conversation findOrCreateConversation(FeishuBot bot, String chatId) {
+        Conversation existing = conversationMapper.selectOne(
+            new QueryWrapper<Conversation>().eq("external_chat_id", chatId).last("limit 1"));
+        if (existing != null) return existing;
+        Conversation conv = new Conversation();
+        conv.setSource("feishu");
+        conv.setExternalChatId(chatId);
+        conv.setStatus("active");
+        conversationMapper.insert(conv);
+        log.info("[FeishuGW] 新建对话: conv={} chat={}", conv.getId(), chatId);
+        return conv;
+    }
+
+    private void saveMessage(String convId, String role, String text, String agentId) {
+        try {
+            Message msg = new Message();
+            msg.setConversationId(convId);
+            msg.setRole(role);
+            msg.setAgentId(agentId);
+            msg.setParts(om.writeValueAsString(List.of(Map.of("type", "text", "text", text))));
+            msg.setCreatedAt(LocalDateTime.now());
+            messageMapper.insert(msg);
+        } catch (Exception e) {
+            log.warn("[FeishuGW] 保存消息失败: role={} len={}", role, text.length(), e);
+        }
+    }
+
+    // ───── helpers: 消息解析 ─────
 
     /**
      * 从飞书 content JSON 字符串提取文本.
